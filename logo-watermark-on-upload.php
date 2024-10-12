@@ -2,8 +2,8 @@
 /**
  * Plugin Name: Logo Watermark on Upload
  * Plugin URI:  
- * Description: Automatically adds a watermark to uploaded images using the site's logo.
- * Version:     1.1
+ * Description: Automatically adds a watermark to uploaded images using the site's logo. The plugin provides options to enable watermarking, set the watermark size, choose the position, adjust the opacity, and define the margin from the edge.
+ * Version:     1.2
  * Author:      Towfique Elahe
  * Author URI:  https://towfique-elahe.framer.website/
  * License:     GPLv2 or later
@@ -198,16 +198,6 @@ function lwu_add_watermark_to_image( $file ) {
     $watermark_width  = $new_watermark_width;
     $watermark_height = $new_watermark_height;
 
-    // Set opacity
-    if ( isset( $options['opacity'] ) ) {
-        $opacity = intval( $options['opacity'] );
-        $opacity = max( 0, min( $opacity, 100 ) ); // Ensure it's between 0 and 100
-        if ( $opacity < 100 ) {
-            // Apply opacity to the watermark
-            lwu_image_copy_merge_alpha( $image, $watermark, $dest_x, $dest_y, 0, 0, $watermark_width, $watermark_height, $opacity );
-        }
-    }
-
     // Calculate position for the watermark
     $margin = isset( $options['margin'] ) ? intval( $options['margin'] ) : 10;
 
@@ -239,8 +229,9 @@ function lwu_add_watermark_to_image( $file ) {
             break;
     }
 
-    // Merge the watermark with the main image
-    imagecopy( $image, $watermark, $dest_x, $dest_y, 0, 0, $watermark_width, $watermark_height );
+    // Apply the watermark with opacity
+    $opacity = isset( $options['opacity'] ) ? intval( $options['opacity'] ) : 100;
+    lwu_image_copy_merge_alpha( $image, $watermark, $dest_x, $dest_y, 0, 0, $watermark_width, $watermark_height, $opacity );
 
     // Save the watermarked image
     switch ( strtolower( $image_ext ) ) {
@@ -249,67 +240,59 @@ function lwu_add_watermark_to_image( $file ) {
             imagejpeg( $image, $image_path );
             break;
         case 'png':
-            imagealphablending( $image, false );
-            imagesavealpha( $image, true );
             imagepng( $image, $image_path );
             break;
     }
 
-    // Free up memory
+    // Free memory
     imagedestroy( $image );
     imagedestroy( $watermark );
 
     return $file;
 }
-add_filter( 'wp_handle_upload', 'lwu_add_watermark_to_image', 10, 1 );
+add_filter( 'wp_handle_upload', 'lwu_add_watermark_to_image' );
 
 /**
- * Function to merge images with alpha transparency and opacity
+ * Merge two images with alpha transparency support and opacity control
  */
 function lwu_image_copy_merge_alpha( $dst_im, $src_im, $dst_x, $dst_y, $src_x, $src_y, $src_w, $src_h, $opacity ) {
-    // Get image width and height
-    $w = imagesx( $src_im );
-    $h = imagesy( $src_im );
+    // Turn alpha blending on for destination image
+    imagealphablending( $dst_im, true );
 
-    // Turn alpha blending off
-    imagealphablending( $src_im, false );
+    // Create a new transparent image to hold the watermark with adjusted opacity
+    $tmp_img = imagecreatetruecolor( $src_w, $src_h );
 
-    // Find the most opaque pixel in the image (the one with the smallest alpha value)
-    $min_alpha = 127;
-    for ( $x = 0; $x < $w; $x++ ) {
-        for ( $y = 0; $y < $h; $y++ ) {
-            $alpha = ( imagecolorat( $src_im, $x, $y ) >> 24 ) & 0xFF;
-            if ( $alpha < $min_alpha ) {
-                $min_alpha = $alpha;
-            }
-        }
-    }
+    // Enable alpha blending and preserve transparency for the temporary image
+    imagealphablending( $tmp_img, false );
+    imagesavealpha( $tmp_img, true );
 
-    // Loop through image pixels and modify alpha for each
-    for ( $x = 0; $x < $w; $x++ ) {
-        for ( $y = 0; $y < $h; $y++ ) {
-            // Get current alpha value (0-127)
-            $color_xy = imagecolorat( $src_im, $x, $y );
-            $alpha    = ( $color_xy >> 24 ) & 0xFF;
+    // Fill the temporary image with transparent color
+    $transparent = imagecolorallocatealpha( $tmp_img, 0, 0, 0, 127 );
+    imagefill( $tmp_img, 0, 0, $transparent );
 
-            // Calculate new alpha
-            $alpha = $alpha + ( 127 - $min_alpha ) * ( 100 - $opacity ) / 100;
+    // Copy the source image into the temporary image
+    imagecopy( $tmp_img, $src_im, 0, 0, $src_x, $src_y, $src_w, $src_h );
 
-            // Get the color index with new alpha
+    // Apply opacity to the temporary image
+    for ( $x = 0; $x < $src_w; $x++ ) {
+        for ( $y = 0; $y < $src_h; $y++ ) {
+            $pixel_color = imagecolorat( $tmp_img, $x, $y );
+            $alpha = ( $pixel_color >> 24 ) & 0x7F; // 0-127 scale for alpha
+            $new_alpha = $alpha + ( 127 - $alpha ) * ( 1 - $opacity / 100 );
             $new_color = imagecolorallocatealpha(
-                $src_im,
-                ( $color_xy >> 16 ) & 0xFF,
-                ( $color_xy >> 8 ) & 0xFF,
-                $color_xy & 0xFF,
-                $alpha
+                $tmp_img,
+                ( $pixel_color >> 16 ) & 0xFF,
+                ( $pixel_color >> 8 ) & 0xFF,
+                $pixel_color & 0xFF,
+                $new_alpha
             );
-
-            // Set pixel with the new color + opacity
-            imagesetpixel( $src_im, $x, $y, $new_color );
+            imagesetpixel( $tmp_img, $x, $y, $new_color );
         }
     }
 
-    // Copy it
-    imagecopy( $dst_im, $src_im, $dst_x, $dst_y, $src_x, $src_y, $src_w, $src_h );
-}
+    // Merge the watermark with the destination image
+    imagecopy( $dst_im, $tmp_img, $dst_x, $dst_y, 0, 0, $src_w, $src_h );
 
+    // Free memory
+    imagedestroy( $tmp_img );
+}
