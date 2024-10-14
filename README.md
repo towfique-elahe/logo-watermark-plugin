@@ -1,2 +1,2 @@
-# logo-watermark-plugin
-Logo Watermark WordPress Plugin: Sets logo as watermak on uploaded images.
+# Logo Watermark Plugin for WordPress
+**Description:** The Logo Watermark Plugin is a feature-rich WordPress tool that lets you easily apply your logo as a watermark on all uploaded images. With full control over watermark settings, you can enable or disable the watermark, adjust the size, position, opacity, and even set the margin from the image edge. Whether you're looking to protect your content, reinforce brand identity, or add a professional touch to your images, this plugin seamlessly integrates with your WordPress media library, making it perfect for bloggers, photographers, and businesses alike.
